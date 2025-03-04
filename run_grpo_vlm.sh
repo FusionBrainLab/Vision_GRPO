@@ -1,8 +1,8 @@
 # Wandb environment variables
-export WANDB_PROJECT="grpo-qwen-2_5-2B"
+export WANDB_PROJECT="grpo-qwen-2-2B"
 export WANDB_ENTITY=""
-export WANDB_API_KEY=""
-export WANDB_NAME="grpo-qwen-2_5-2B-v"  
+export WANDB_API_KEY="3d726fd76bb1ed0c15a7004731707d54572acef0"
+export WANDB_NAME="grpo-qwen-2-2B-v-8gpus-one_reward-synthetic-data-check"  
 
 
 RUN_NAME="Qwen2-VL-2B-GRPO"
@@ -16,6 +16,7 @@ torchrun --nproc_per_node="8" \
     run_r1_grpo_vlm.py \
     --deepspeed  configs/zero3.json \
     --config configs/grpo-qwen-2.5-v.yaml \
+    --json_data_path "./data/textvqa_cot_train_1_bbox_0.json" \
     --report_to wandb \
     --gradient_checkpointing false \
     --attn_implementation flash_attention_2 \

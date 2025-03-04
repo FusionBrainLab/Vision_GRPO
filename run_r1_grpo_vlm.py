@@ -110,6 +110,7 @@ class ScriptArguments:
     min_pixels: int = 3136
     image_root: str = ""
     config_path: str = "config.yaml"
+    json_data_path: str = ""
 
 
 logging.basicConfig(level=logging.INFO)
@@ -398,10 +399,12 @@ def main():
     parser = TrlParser((ModelConfig, ScriptArguments, GRPOConfig))
     model_args, script_args, training_args = parser.parse_args_and_config()
 
-    with open(script_args.config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    script_args.json_data_path = config.get("json_data_path", "")
+    # Load config from config file if not set directly via command line
+    if not script_args.json_data_path and script_args.config_path and os.path.exists(script_args.config_path):
+        with open(script_args.config_path, "r") as f:
+            config = yaml.safe_load(f)
+            if config and "json_data_path" in config:
+                script_args.json_data_path = config.get("json_data_path", "")
 
     grpo_function(model_args, script_args, training_args)
 
