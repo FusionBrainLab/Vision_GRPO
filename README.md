@@ -1,4 +1,4 @@
-# Vision_GRPO
+# Vision GRPO
 
 # Training Vision Language Models with GRPO for Visual Grounding
 
