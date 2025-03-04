@@ -1,7 +1,6 @@
-# Wandb environment variables
 export WANDB_PROJECT="grpo-qwen-2-2B"
 export WANDB_ENTITY=""
-export WANDB_API_KEY="3d726fd76bb1ed0c15a7004731707d54572acef0"
+export WANDB_API_KEY=""
 export WANDB_NAME="grpo-qwen-2-2B-v-8gpus-one_reward-synthetic-data-check"  
 
 
