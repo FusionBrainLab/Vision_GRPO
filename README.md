@@ -433,9 +433,9 @@ The comment on the book is located near the bottom of the image, just above the 
 
 ```
 
-Qwen2.5 VL initially performs well on grounding tasks; however, the results vary significantly across different examples.
+Qwen2.5 VL initially performs well on grounding tasks; however, the results vary across different examples.
 
-<img width="514" alt="DUNE" src="https://github.com/user-attachments/assets/e1d66ce3-23c9-49be-a420-3337b307b2aa" />
+<img width="414" alt="DUNE" src="https://github.com/user-attachments/assets/e1d66ce3-23c9-49be-a420-3337b307b2aa" />
 
 ## Conclusion
 
