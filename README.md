@@ -8,7 +8,7 @@ Based on the recent advances in RL for reasoning enhance, we'll explore how to f
 
 ### Adapting GRPO for Vision Language Models
 
-Based on the great tutorial by Phill Schmidt \cite{}, we provided the modified version of the approach for training vision language models using the same reasoning approach. To adapt it for Vision Language Models, we need to:
+Based on the great tutorial [mini-R1](https://www.philschmid.de/mini-deepseek-r1) tutorial, we provided the modified version of the approach for training vision language models using the same reasoning approach. To adapt it for Vision Language Models, we need to:
 
 1. **Handle Multimodal Inputs**: Process both images and text in the same framework
 2. **Custom Reward Functions**: Create vision-specific rewards that evaluate how well the model identifies regions in images
@@ -39,13 +39,11 @@ trainer = Qwen2VLGRPOTrainer(
 
 ### What is Visual Grounding?
 
-Basically, vision grounding task is defined as a task to provide bounding boxes for the object defined in the input request. We look into the visual grounding as a suplementary task to help the model to provide correct answer on some complex question. This approach was investigated in \cite{vision chain of thoughts}, where authors proposed to use visual grounding task to zoom into specific part of the image, where the answer is kept. In our tutorial, we use subsample of the textVQA dataset to show, whether we can teach the model to zoom in to the relevant parts of the image via RL.
-
-![image.png](attachment:18c6cd9c-20aa-40d2-8f37-73b9641cd828:image.png)
+Basically, vision grounding task is defined as a task to provide bounding boxes for the object defined in the input request. We look into the visual grounding as a suplementary task to help the model to provide correct answer on some complex question. This approach was investigated in [Visual CoT](https://arxiv.org/abs/2403.16999), where authors proposed to use visual grounding task to zoom into specific part of the image, where the answer is kept. In our tutorial, we use subsample of the textVQA dataset to show, whether we can teach the model to zoom in to the relevant parts of the image via RL.
 
 ### Task Formulation
 
-In our implementation, the task is structured as follows:
+The task is structured as follows:
 
 1. The model receives an image and a text query about a specific visual element
 2. The model must:
@@ -79,31 +77,168 @@ It appears to be located approximately at the coordinates [220, 150, 260, 210].
 For this tutorial, we use a vision chain-of-thought dataset specifically designed for visual grounding tasks:
 
 ```python
-# Load the dataset
-dataset = datasets.load_from_disk("/path/to/vision_cot")
+import json
+import math
+from PIL import Image
+import os
 
-# Define features for dataset
-my_features = Features({
-    "image": Image(decode=True),
-    "question": Value("string"),
-    "answer": Value("string"),
-    "bboxs": Sequence(Sequence(Value("float")))
-})
+def process_jsonl_data(jsonl_file, train_path, output_file=None, max_size=512, maintain_aspect_ratio=True):
+    """
+    Process a JSONL file containing image metadata, resize images, and rescale bounding boxes.
+    
+    Parameters:
+    -----------
+    jsonl_file: str
+        Path to the JSONL file
+    train_path: str
+        Path to the directory containing training images
+    output_file: str, optional
+        Path to save the processed dataset (if None, just returns the data)
+    max_size: int, default=512
+        Maximum dimension for resized images
+    maintain_aspect_ratio: bool, default=True
+        Whether to maintain aspect ratio when resizing
+        
+    Returns:
+    --------
+    list: Processed dataset
+    """
+    dataset = []
+    
+    # Count for statistics
+    total_entries = 0
+    skipped_entries = 0
+    processed_entries = 0
+    
+    with open(jsonl_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                # Skip any empty lines if present
+                continue
+                
+            total_entries += 1
+            
+            try:
+                data = json.loads(line)
+                
+                # Skip entries with multiple bounding boxes
+                if len(data['bboxs']) > 1:
+                    skipped_entries += 1
+                    continue
+                
+                # Ensure image path is complete
+                if not data['image'].startswith(train_path):
+                    data['image'] = os.path.join(train_path, data['image'])
+                
+                # Check if image exists
+                if not os.path.exists(data['image']):
+                    print(f"Warning: Image not found at {data['image']}")
+                    skipped_entries += 1
+                    continue
+                
+                # Open and get dimensions of the image
+                try:
+                    image = Image.open(data['image'])
+                    original_width, original_height = image.size
+                except Exception as e:
+                    print(f"Error opening image {data['image']}: {e}")
+                    skipped_entries += 1
+                    continue
+                
+                # Determine new dimensions
+                if maintain_aspect_ratio:
+                    if original_width > max_size or original_height > max_size:
+                        # Calculate new dimensions maintaining aspect ratio
+                        if original_width > original_height:
+                            new_width = max_size
+                            new_height = int(original_height * (max_size / original_width))
+                        else:
+                            new_height = max_size
+                            new_width = int(original_width * (max_size / original_height))
+                    else:
+                        # Image is within acceptable dimensions, no resize needed
+                        new_width, new_height = original_width, original_height
+                else:
+                    # Fixed size without maintaining aspect ratio
+                    new_width, new_height = max_size, max_size
+                
+                # Only rescale bounding boxes if dimensions changed
+                if new_width != original_width or new_height != original_height:
+                    # Calculate the scaling factors
+                    scale_x = new_width / original_width
+                    scale_y = new_height / original_height
+                    
+                    # Rescale all bounding boxes
+                    new_bboxs = []
+                    for original_bbox in data['bboxs']:
+                        # Adjust the bounding box coordinates
+                        new_bbox = [
+                            math.ceil(original_bbox[0] * scale_x),
+                            math.ceil(original_bbox[1] * scale_y),
+                            math.ceil(original_bbox[2] * scale_x),
+                            math.ceil(original_bbox[3] * scale_y)
+                        ]
+                        new_bboxs.append(new_bbox)
+                    
+                    # Update bounding boxes in the data
+                    data['bboxs'] = new_bboxs.copy()
+                
+                # Store the new dimensions in the data
+                data['width'] = new_width
+                data['height'] = new_height
+                
+                # Append processed data to the dataset
+                dataset.append(data)
+                processed_entries += 1
+                
+                # Print progress every 1000 entries
+                if processed_entries % 1000 == 0:
+                    print(f"Processed {processed_entries} entries...")
+                
+            except Exception as e:
+                print(f"Error processing line: {e}")
+                skipped_entries += 1
+    
+    # Print statistics
+    print(f"Total entries: {total_entries}")
+    print(f"Processed entries: {processed_entries}")
+    print(f"Skipped entries: {skipped_entries}")
+    
+    # Save processed dataset if output file is specified
+    if output_file:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            for item in dataset:
+                f.write(json.dumps(item) + '\n')
+        print(f"Saved processed dataset to {output_file}")
+    
+    return dataset
 
-# Process dataset to keep relevant fields
-def keep_fields(example):
-    return {
-        "image": example["image"],
-        "question": example["question"],
-        "answer": example["answer"],
-        "bboxs": example["bboxs"]
-    }
-
-dataset = dataset.map(
-    keep_fields,
-    features=my_features,
-    remove_columns=["width", "height", "dataset", "split"]
-)
+# Example usage:
+if __name__ == "__main__":
+    TRAIN_PATH = "./train_images/"
+    JSONL_FILE = "./metadata/textvqa_cot_train.jsonl"
+    OUTPUT_FILE = "processed_textvqa_train.jsonl"
+    
+    # Process the JSONL file
+    processed_data = process_jsonl_data(
+        jsonl_file=JSONL_FILE,
+        train_path=TRAIN_PATH,
+        output_file=OUTPUT_FILE,
+        max_size=512,
+        maintain_aspect_ratio=True
+    )
+    
+    print(f"Processed dataset contains {len(processed_data)} entries")
+    
+    # Show a sample entry if available
+    if processed_data:
+        sample = processed_data[0]
+        print("\nSample entry:")
+        print(f"Question: {sample['question']}")
+        print(f"Answer: {sample['answer']}")
+        print(f"Image: {sample['image']}")
+        print(f"Dimensions: {sample['width']}x{sample['height']}")
+        print(f"Bounding boxes: {sample['bboxs']}")
 
 ```
 
@@ -195,10 +330,10 @@ We configure the training process with appropriate hyperparameters:
 training_args = GRPOConfig(
     output_dir="./qwen_vl_grpo_output",
     num_train_epochs=3,
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
-    gradient_accumulation_steps=4,
-    learning_rate=5e-5,
+    per_device_train_batch_size=1,
+    per_device_eval_batch_size=1,
+    gradient_accumulation_steps=2,
+    learning_rate=1e-5,
     warmup_steps=100,
     logging_steps=10,
     evaluation_strategy="steps",
@@ -206,7 +341,7 @@ training_args = GRPOConfig(
     save_strategy="steps",
     save_steps=50,
     save_total_limit=3,
-    fp16=True,
+    bf16=True,
     report_to="wandb",
     logging_first_step=True
 )
@@ -221,12 +356,12 @@ We load the Qwen2.5-VL model and set up the GRPO trainer:
 from transformers import Qwen2VLProcessor, Qwen2VLForConditionalGeneration
 
 # Load model and processor
-processor = Qwen2VLProcessor.from_pretrained(
+processor = Qwen2_5_VLProcessor.from_pretrained(
     model_args.model_name_or_path,
     trust_remote_code=True
 )
 
-model = Qwen2VLForConditionalGeneration.from_pretrained(
+model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
     model_args.model_name_or_path,
     trust_remote_code=True
 )
@@ -269,16 +404,7 @@ if training_args.push_to_hub:
 
 ## 5. Training Metrics
 
-During training, we monitor several key metrics to evaluate the model's performance:
-
-### Loss Tracking
-
-![image.png](attachment:353a9fef-171f-4562-9bf7-ecbb08ad2862:image.png)
-
-The training process shows how the loss decreases over time, indicating the model is learning to:
-
-- Generate proper reasoning in `<think>` tags
-- Accurately predict bounding boxes in `<answer>` tags
+<img width="756" alt="image" src="https://github.com/user-attachments/assets/a8d03dd6-7290-49c6-8700-46014b3e3235" />
 
 ## 6. Example Results
 
@@ -286,20 +412,17 @@ Let's look at some examples of the model's performance after training:
 
 ### Example 1: Successful Grounding
 
-![image.png](attachment:9226dbdd-8c25-4224-b561-c1d4204ba806:image.png)
-
-![image.png](attachment:e7fefc98-945d-4537-8dbd-728972d40daf:image.png)
+<img width="414" alt="image" src="https://github.com/user-attachments/assets/b46d9923-921c-449b-8bcd-3df1246d5576" />
 
 **Query:**
 
 ```
-Who is the author of the book? Show your reasoning in <think> thinking process </think> tags. Return bounding box in <answer> [x1, y1, x2, y2] </answer> tags.
-
 What is the comment? Show your reasoning in <think> thinking process </think> tags. Return bounding box in <answer> [x1, y1, x2, y2] </answer> tags.
 
 ```
 
 **Model Output:**
+
 
 ```
 Let me analyze this image.
@@ -310,42 +433,20 @@ The comment on the book is located near the bottom of the image, just above the 
 
 ```
 
-### Example 2: Challenging Case
+Qwen2.5 VL initially performs well on grounding tasks; however, the results vary significantly across different examples.
 
-**Query:**
-
-```
-Where is the coffee mug in this kitchen scene? Show your reasoning in <think> thinking process </think> tags. Return bounding box in <answer> [x1, y1, x2, y2] </answer> tags.
-
-```
-
-**Model Output:**
-
-```
-Let me analyze this image.
-<think>
-This is a kitchen scene with various items on the counter.
-I need to locate a coffee mug.
-I can see what appears to be a white coffee mug on the counter near the microwave.
-There's also what might be another mug partially visible behind some other objects.
-The white mug is more clearly visible, so I'll focus on that one.
-Based on the image dimensions, I estimate the bounding box coordinates to be around [180, 220, 210, 250].
-</think>
-<answer>[180, 220, 210, 250]</answer>
-
-```
+<img width="514" alt="DUNE" src="https://github.com/user-attachments/assets/e1d66ce3-23c9-49be-a420-3337b307b2aa" />
 
 ## Conclusion
 
 In this tutorial, we've walked through the complete process of training a Vision Language Model for visual grounding using GRPO:
 
 1. We adapted GRPO for vision-language tasks by implementing custom reward functions for bounding box evaluation
-2. We prepared a specialized dataset for visual grounding with formatted prompts
-3. We configured and launched training with the modified `Qwen2VLGRPOTrainer`
-4. We tracked key metrics to monitor training progress
-5. We examined examples showing the model's ability to perform visual grounding tasks
+2. Prepared a specialized dataset for visual grounding with formatted prompts
+3. Configured and launched training with the modified `Qwen2VLGRPOTrainer`
+4. Examined examples showing the model's ability to perform visual grounding tasks
 
-This approach demonstrates how reinforcement learning techniques can be applied to multimodal models, helping them learn to connect textual and visual information more effectively. The trained model can accurately identify regions in images based on textual descriptions, providing explanations for its reasoning process.
+This approach demonstrates how reinforcement learning techniques can be applied to multimodal models, helping them learn to connect textual and visual information more effectively. While the example is not for real-life applications, and smaller models can benefit more from SFT-reasoning, this is a good starting point.
 
 ### Next Steps
 
@@ -355,6 +456,9 @@ This approach demonstrates how reinforcement learning techniques can be applied 
 
 ### Resources
 
-- GRPO Paper
-- Qwen2.5-VL Model Documentation
-- Visual Grounding Benchmark Datasets
+- [DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models](https://arxiv.org/abs/2402.03300)
+- [Qwen2.5-VL](https://huggingface.co/docs/transformers/model_doc/qwen2_5_vl)
+- [Visual CoT: Advancing Multi-Modal Language Models with a Comprehensive Dataset and Benchmark for Chain-of-Thought Reasoning](https://arxiv.org/abs/2403.16999)
+- [Mini-R1: Reproduce Deepseek R1 „aha moment“ a RL tutorial](https://www.philschmid.de/mini-deepseek-r1)
+- [VLM-R1](https://github.com/om-ai-lab/VLM-R1/tree/main)
+- [open-r1-multimodal](https://github.com/EvolvingLMMs-Lab/open-r1-multimodal)
