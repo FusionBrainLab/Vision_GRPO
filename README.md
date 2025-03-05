@@ -404,7 +404,11 @@ if training_args.push_to_hub:
 
 ## 5. Training Metrics
 
-<img width="756" alt="image" src="https://github.com/user-attachments/assets/a8d03dd6-7290-49c6-8700-46014b3e3235" />
+It is interesting to notice that the grounding reward didn't change much, due to the fact that the Qwen-VL model is able to provide zero-shot object grounding. Also, we noticed that it was necessary to provide the correct format of the answer, closer to the one the model was adjusted to, otherwise, the grounding reward was a constant 0.
+
+<img width="451" alt="image" src="https://github.com/user-attachments/assets/75cfcf5b-5243-49f8-9fbd-cbf4245817ab" />
+
+<img width="445" alt="image" src="https://github.com/user-attachments/assets/64c342bc-d521-4a47-b608-265f1eb8a197" />
 
 ## 6. Example Results
 
@@ -447,6 +451,12 @@ In this tutorial, we've walked through the complete process of training a Vision
 4. Examined examples showing the model's ability to perform visual grounding tasks
 
 This approach demonstrates how reinforcement learning techniques can be applied to multimodal models, helping them learn to connect textual and visual information more effectively. While the example is not for real-life applications, and smaller models can benefit more from SFT-reasoning, this is a good starting point.
+
+While the GRPO for VLM can provide interesting findings, there is important to notice the following:
+
+1. As noticed by researchers from DeepSeek, small vision-language models do not perform well on GRPO tasks; SFT could provide better results.
+3. Processing long context remains a challenge; we will further adjust the code for these cases.
+4. It is important to construct the reward function and the answer format suitable for the model, otherwise the model can get stuck in a local minimum.
 
 ### Next Steps
 
